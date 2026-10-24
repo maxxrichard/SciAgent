@@ -1,0 +1,108 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $monNs := .Values.networkPolicy.monitoringNamespace }}
+# Baseline: deny all ingress to every pod of this release. The policies below
+# re-open only the paths that are needed.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "sciagent.componentName" (list $ "default-deny-ingress") }}
+  labels:
+    {{- include "sciagent.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "sciagent.releaseSelectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+{{- if .Values.api.enabled }}
+---
+# API: reachable from the load balancer / allowed peers on its HTTP port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "sciagent.componentName" (list $ "api") }}
+  labels:
+    {{- include "sciagent.componentLabels" (list $ "api") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "sciagent.selectorLabels" (list $ "api") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: http
+          protocol: TCP
+      {{- with .Values.networkPolicy.apiIngressFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+{{- range $server := .Values.mcpServers }}
+{{- $component := printf "mcp-%s" $server.name }}
+---
+# MCP {{ $server.name }}: only the API (agent orchestrator) may call tools.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "sciagent.componentName" (list $ $component) }}
+  labels:
+    {{- include "sciagent.componentLabels" (list $ $component) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "sciagent.selectorLabels" (list $ $component) | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "sciagent.selectorLabels" (list $ "api") | nindent 14 }}
+      ports:
+        - port: mcp
+          protocol: TCP
+    {{- if $monNs }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $monNs }}
+      ports:
+        - port: mcp
+          protocol: TCP
+    {{- end }}
+{{- end }}
+{{- if .Values.vllm.enabled }}
+---
+# vLLM: only the API may send completions.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "sciagent.componentName" (list $ "vllm") }}
+  labels:
+    {{- include "sciagent.componentLabels" (list $ "vllm") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "sciagent.selectorLabels" (list $ "vllm") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "sciagent.selectorLabels" (list $ "api") | nindent 14 }}
+      ports:
+        - port: http
+          protocol: TCP
+    {{- if $monNs }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $monNs }}
+      ports:
+        - port: http
+          protocol: TCP
+    {{- end }}
+{{- end }}
+{{- end }}

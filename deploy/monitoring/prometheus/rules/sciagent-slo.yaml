@@ -1,0 +1,256 @@
+# PrometheusRule for the Prometheus operator (kube-prometheus-stack).
+# Generated from local-rules.yml (the source of truth): spec.groups is a
+# verbatim copy of that file's groups. Regenerate after editing local-rules.yml.
+#
+#   kubectl apply -n monitoring -f deploy/monitoring/prometheus/rules/sciagent-slo.yaml
+#
+# SLO: 99.9% API availability over 30 days, multi-window burn-rate alerts.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: sciagent-slo
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: sciagent
+    app.kubernetes.io/part-of: sciagent
+    app.kubernetes.io/component: monitoring
+    # Matched by kube-prometheus-stack's default ruleSelector.
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: sciagent-api-slo-recording
+      interval: 30s
+      rules:
+        - record: service:sciagent_http_requests:rate5m
+          expr: sum by (service) (rate(sciagent_http_requests_total{service="api"}[5m]))
+        - record: service:sciagent_http_request_errors:ratio_rate5m
+          expr: |
+            sum by (service) (rate(sciagent_http_requests_total{service="api",status=~"5.."}[5m]))
+            /
+            sum by (service) (rate(sciagent_http_requests_total{service="api"}[5m]))
+        - record: service:sciagent_http_request_errors:ratio_rate30m
+          expr: |
+            sum by (service) (rate(sciagent_http_requests_total{service="api",status=~"5.."}[30m]))
+            /
+            sum by (service) (rate(sciagent_http_requests_total{service="api"}[30m]))
+        - record: service:sciagent_http_request_errors:ratio_rate1h
+          expr: |
+            sum by (service) (rate(sciagent_http_requests_total{service="api",status=~"5.."}[1h]))
+            /
+            sum by (service) (rate(sciagent_http_requests_total{service="api"}[1h]))
+        - record: service:sciagent_http_request_errors:ratio_rate2h
+          expr: |
+            sum by (service) (rate(sciagent_http_requests_total{service="api",status=~"5.."}[2h]))
+            /
+            sum by (service) (rate(sciagent_http_requests_total{service="api"}[2h]))
+        - record: service:sciagent_http_request_errors:ratio_rate6h
+          expr: |
+            sum by (service) (rate(sciagent_http_requests_total{service="api",status=~"5.."}[6h]))
+            /
+            sum by (service) (rate(sciagent_http_requests_total{service="api"}[6h]))
+        - record: service:sciagent_http_request_errors:ratio_rate1d
+          expr: |
+            sum by (service) (rate(sciagent_http_requests_total{service="api",status=~"5.."}[1d]))
+            /
+            sum by (service) (rate(sciagent_http_requests_total{service="api"}[1d]))
+        - record: service:sciagent_http_request_errors:ratio_rate3d
+          expr: |
+            sum by (service) (rate(sciagent_http_requests_total{service="api",status=~"5.."}[3d]))
+            /
+            sum by (service) (rate(sciagent_http_requests_total{service="api"}[3d]))
+
+    - name: sciagent-api-slo-budget
+      # 30d windows are expensive; evaluate them less often.
+      interval: 5m
+      rules:
+        - record: service:sciagent_http_request_errors:ratio_rate30d
+          expr: |
+            sum by (service) (rate(sciagent_http_requests_total{service="api",status=~"5.."}[30d]))
+            /
+            sum by (service) (rate(sciagent_http_requests_total{service="api"}[30d]))
+        # 1 = full budget left, 0 = exhausted, < 0 = SLO violated.
+        - record: service:sciagent_slo_error_budget_remaining:ratio30d
+          expr: 1 - (service:sciagent_http_request_errors:ratio_rate30d / 0.001)
+
+    - name: sciagent-latency-recording
+      interval: 30s
+      rules:
+        - record: service:sciagent_http_request_duration_seconds:p95_5m
+          expr: |
+            histogram_quantile(0.95,
+              sum by (service, le) (
+                rate(sciagent_http_request_duration_seconds_bucket{service="api",route!~"/healthz|/readyz|/metrics"}[5m])
+              )
+            )
+        - record: route:sciagent_http_request_duration_seconds:p95_5m
+          expr: |
+            histogram_quantile(0.95,
+              sum by (route, le) (
+                rate(sciagent_http_request_duration_seconds_bucket{service="api",route!~"/healthz|/readyz|/metrics"}[5m])
+              )
+            )
+        - record: model_name:vllm_e2e_request_latency_seconds:p95_5m
+          expr: |
+            histogram_quantile(0.95,
+              sum by (model_name, le) (rate(vllm:e2e_request_latency_seconds_bucket[5m]))
+            )
+        - record: tool:sciagent_tool_calls_errors:ratio_rate10m
+          expr: |
+            sum by (tool) (rate(sciagent_tool_calls_total{outcome="error"}[10m]))
+            /
+            sum by (tool) (rate(sciagent_tool_calls_total[10m]))
+
+    - name: sciagent-api-slo-alerts
+      rules:
+        - alert: SciAgentAPIErrorBudgetBurnFast
+          expr: |
+            (
+              service:sciagent_http_request_errors:ratio_rate1h > (14.4 * 0.001)
+              and
+              service:sciagent_http_request_errors:ratio_rate5m > (14.4 * 0.001)
+            )
+            or
+            (
+              service:sciagent_http_request_errors:ratio_rate6h > (6 * 0.001)
+              and
+              service:sciagent_http_request_errors:ratio_rate30m > (6 * 0.001)
+            )
+          for: 2m
+          labels:
+            severity: critical
+            slo: api-availability
+          annotations:
+            summary: SciAgent API is burning its 99.9% availability error budget fast
+            description: >-
+              5xx ratio is {{ $value | humanizePercentage }}, consuming the 30-day
+              error budget at >= 6x the sustainable rate. At this pace the budget is
+              exhausted in under 5 days.
+
+        - alert: SciAgentAPIErrorBudgetBurnSlow
+          expr: |
+            (
+              service:sciagent_http_request_errors:ratio_rate1d > (3 * 0.001)
+              and
+              service:sciagent_http_request_errors:ratio_rate2h > (3 * 0.001)
+            )
+            or
+            (
+              service:sciagent_http_request_errors:ratio_rate3d > (1 * 0.001)
+              and
+              service:sciagent_http_request_errors:ratio_rate6h > (1 * 0.001)
+            )
+          for: 15m
+          labels:
+            severity: warning
+            slo: api-availability
+          annotations:
+            summary: SciAgent API is steadily consuming its error budget
+            description: >-
+              5xx ratio is {{ $value | humanizePercentage }} over a long window;
+              the 30-day error budget will be exhausted before the window ends.
+
+        - alert: SciAgentAPIErrorBudgetExhausted
+          expr: service:sciagent_slo_error_budget_remaining:ratio30d <= 0
+          for: 30m
+          labels:
+            severity: warning
+            slo: api-availability
+          annotations:
+            summary: SciAgent API 30-day error budget is exhausted
+            description: Freeze risky deploys until the budget recovers.
+
+        - alert: SciAgentAPIDown
+          expr: sum by (service) (up{service="api"}) == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: No SciAgent API target is up
+            description: Prometheus cannot scrape any api instance.
+
+    - name: sciagent-latency-alerts
+      rules:
+        - alert: SciAgentAPILatencyP95High
+          expr: service:sciagent_http_request_duration_seconds:p95_5m > 0.3
+          for: 10m
+          labels:
+            severity: warning
+            slo: api-latency
+          annotations:
+            summary: SciAgent API p95 latency above 300 ms
+            description: API p95 latency is {{ $value | humanizeDuration }} (threshold 300 ms).
+
+        # End-to-end LLM latency includes generation of up to 8k tokens, so the
+        # threshold is in seconds rather than the API's sub-second target.
+        - alert: SciAgentLLMLatencyP95High
+          expr: model_name:vllm_e2e_request_latency_seconds:p95_5m > 20
+          for: 10m
+          labels:
+            severity: warning
+            slo: llm-latency
+          annotations:
+            summary: vLLM end-to-end p95 latency above 20 s for {{ $labels.model_name }}
+            description: vLLM p95 request latency is {{ $value | humanizeDuration }}. Check queue depth and GPU saturation.
+
+        - alert: SciAgentLLMQueueBacklog
+          expr: sum(vllm:num_requests_waiting) > 20
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: vLLM request queue is backing up
+            description: '{{ $value }} requests are waiting for a vLLM slot; the GPU pool may be at max size.'
+
+    - name: sciagent-agent-alerts
+      rules:
+        - alert: SciAgentToolCallErrorRatioHigh
+          expr: |
+            tool:sciagent_tool_calls_errors:ratio_rate10m > 0.05
+            and
+            sum by (tool) (rate(sciagent_tool_calls_total[10m])) > 0.05
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: MCP tool {{ $labels.tool }} is failing
+            description: '{{ $value | humanizePercentage }} of {{ $labels.tool }} calls returned an error over the last 10 minutes.'
+
+        - alert: SciAgentGuardrailBlocksSpike
+          expr: |
+            sum without (instance, pod, namespace, endpoint, job, container) (rate(sciagent_guardrail_blocks_total[15m]))
+            >
+            3 * sum without (instance, pod, namespace, endpoint, job, container) (rate(sciagent_guardrail_blocks_total[1d]))
+            and
+            sum without (instance, pod, namespace, endpoint, job, container) (rate(sciagent_guardrail_blocks_total[15m])) * 60 > 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Guardrail blocks are spiking
+            description: >-
+              Guardrail blocks are > 3x the daily baseline (and > 1/min). Possible
+              prompt-injection attempt, misbehaving agent, or a policy regression.
+
+        - alert: SciAgentPipelineFailures
+          expr: |
+            sum without (instance, pod, namespace, endpoint, job, container) (increase(sciagent_pipeline_failures_total[30m])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: Data pipeline failures in the last 30 minutes
+            description: '{{ $value | humanize }} pipeline failure(s) recorded in the last 30 minutes. Check the Airflow task logs.'
+
+    - name: sciagent-gpu-alerts
+      rules:
+        - alert: SciAgentGPUUnderutilised
+          expr: avg by (Hostname, gpu, modelName) (DCGM_FI_DEV_GPU_UTIL) < 20
+          for: 1h
+          labels:
+            severity: info
+            category: cost
+          annotations:
+            summary: GPU {{ $labels.gpu }} on {{ $labels.Hostname }} below 20% utilisation for 1h
+            description: >-
+              Average utilisation is {{ $value | humanize }}%. Consider lowering
+              vllm.autoscaling.minReplicas or letting the gpu-inference node group
+              scale to zero.

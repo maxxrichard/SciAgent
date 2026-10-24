@@ -1,0 +1,16 @@
+# Grafana dashboard provisioning: loads every JSON file mounted at
+# /var/lib/grafana/dashboards (mount deploy/monitoring/grafana/dashboards there).
+apiVersion: 1
+
+providers:
+  - name: sciagent
+    orgId: 1
+    folder: SciAgent
+    folderUid: sciagent
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

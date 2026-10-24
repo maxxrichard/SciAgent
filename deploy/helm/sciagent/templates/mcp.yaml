@@ -1,0 +1,193 @@
+{{- /*
+One Deployment / Service / HPA / PDB per MCP tool server in .Values.mcpServers.
+Per-server keys (replicaCount, resources, autoscaling, pdb) override .Values.mcp.
+*/ -}}
+{{- $mcp := .Values.mcp }}
+{{- range $server := .Values.mcpServers }}
+{{- $component := printf "mcp-%s" $server.name }}
+{{- $name := include "sciagent.componentName" (list $ $component) }}
+{{- $replicas := $server.replicaCount | default $mcp.replicaCount }}
+{{- $resources := $server.resources | default $mcp.resources }}
+{{- $autoscaling := mergeOverwrite (deepCopy $mcp.autoscaling) ($server.autoscaling | default dict) }}
+{{- $pdb := mergeOverwrite (deepCopy $mcp.pdb) ($server.pdb | default dict) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sciagent.componentLabels" (list $ $component) | nindent 4 }}
+    sciagent.io/tool-domain: {{ $server.name }}
+spec:
+  {{- if not $autoscaling.enabled }}
+  replicas: {{ $replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "sciagent.selectorLabels" (list $ $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sciagent.componentLabels" (list $ $component) | nindent 8 }}
+        sciagent.io/tool-domain: {{ $server.name }}
+        # Used by the NetworkPolicy that admits traffic from the API only.
+        sciagent.io/role: mcp-server
+      annotations:
+        {{- include "sciagent.configChecksum" $ | nindent 8 }}
+        {{- with $mcp.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "sciagent.serviceAccountName" (list $ $mcp.serviceAccount "mcp") }}
+      automountServiceAccountToken: {{ $mcp.serviceAccount.automountToken }}
+      {{- with $.Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- include "sciagent.podSecurityContext" (list $ $mcp.podSecurityContext) | nindent 8 }}
+      containers:
+        - name: mcp
+          image: {{ include "sciagent.image" (list $ $mcp.image) }}
+          imagePullPolicy: {{ $mcp.image.pullPolicy }}
+          command:
+            - python
+            - -m
+            - sciagent.mcp_servers.{{ $server.name }}
+            - --transport
+            - streamable-http
+            - --port
+            - {{ $server.port | quote }}
+          ports:
+            - name: mcp
+              containerPort: {{ $server.port }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "sciagent.componentName" (list $ "config") }}
+            {{- if $mcp.envFromSecret }}
+            - secretRef:
+                name: {{ include "sciagent.secretName" $ }}
+            {{- end }}
+          env:
+            - name: SCIAGENT_SERVICE
+              value: {{ $component }}
+            - name: TMPDIR
+              value: /tmp
+          # Streamable HTTP has no dedicated health route; a TCP probe checks
+          # the listener without opening an MCP session.
+          startupProbe:
+            tcpSocket:
+              port: mcp
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            tcpSocket:
+              port: mcp
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: mcp
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            {{- toYaml $resources | nindent 12 }}
+          securityContext:
+            {{- include "sciagent.containerSecurityContext" (list $ $mcp.containerSecurityContext) | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # Scratch space for staging imaging tiles / VCF slices pulled from S3.
+        - name: tmp
+          emptyDir:
+            sizeLimit: 4Gi
+      {{- with $mcp.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $mcp.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $mcp.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if $mcp.topologySpread.enabled }}
+      # Generated per server so each tool server spreads independently.
+      topologySpreadConstraints:
+        - maxSkew: {{ $mcp.topologySpread.maxSkew }}
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: {{ $mcp.topologySpread.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "sciagent.selectorLabels" (list $ $component) | nindent 14 }}
+        - maxSkew: {{ $mcp.topologySpread.maxSkew }}
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "sciagent.selectorLabels" (list $ $component) | nindent 14 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sciagent.componentLabels" (list $ $component) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "sciagent.selectorLabels" (list $ $component) | nindent 4 }}
+  ports:
+    - name: mcp
+      port: {{ $server.port }}
+      targetPort: mcp
+      protocol: TCP
+{{- if $autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sciagent.componentLabels" (list $ $component) | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $name }}
+  minReplicas: {{ $autoscaling.minReplicas }}
+  maxReplicas: {{ $autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}
+{{- if $pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sciagent.componentLabels" (list $ $component) | nindent 4 }}
+spec:
+  minAvailable: {{ $pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "sciagent.selectorLabels" (list $ $component) | nindent 6 }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,41 @@
+name: Eval gate
+
+# Every change to agent behaviour must pass the curated evaluation suite before
+# it can be released. The workflow is also called from release.yml.
+on:
+  pull_request:
+    paths: ["src/**", "evals/**", "pyproject.toml"]
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      judge:
+        description: "Judge (heuristic or llm against the staging vLLM endpoint)"
+        default: heuristic
+        type: choice
+        options: [heuristic, llm]
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv venv --python 3.12 && uv pip install -e .
+      - name: Run evaluation suite against release gate
+        env:
+          SCIAGENT_LLM_BACKEND: ${{ inputs.judge == 'llm' && 'vllm' || 'rule' }}
+          SCIAGENT_LLM_BASE_URL: ${{ secrets.STAGING_VLLM_URL }}
+        run: |
+          .venv/bin/sciagent eval --gate evals/gate.yaml --out evals/reports/${{ github.sha }} \
+            --judge ${{ inputs.judge || 'heuristic' }}
+      - name: Publish report to job summary
+        if: always()
+        run: cat evals/reports/${{ github.sha }}/report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-report
+          path: evals/reports/${{ github.sha }}

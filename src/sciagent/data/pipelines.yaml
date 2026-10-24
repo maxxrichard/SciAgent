@@ -1,0 +1,831 @@
+# Declarative pipeline catalogue. Airflow DAGs are generated from this file
+# (dags/sciagent_pipelines.py); the same specs run locally via `sciagent pipelines run`.
+pipelines:
+- id: imaging-segmentation-site-a
+  kind: imaging_segmentation
+  modality: imaging
+  group: imaging
+  schedule: 0 1 * * *
+  params:
+    site: site-a
+    samples:
+    - IMG-0001
+    - IMG-0002
+    - IMG-0003
+    - IMG-0004
+    - IMG-0005
+    - IMG-0006
+    - IMG-0007
+    - IMG-0008
+  checks:
+    min_rows: 1
+    not_null:
+    - sample_id
+    - cell_count
+    range:
+      cell_count:
+      - 0
+      - 500
+  description: Nucleus segmentation summaries for microscopy acquired at site-a.
+- id: imaging-features-site-a
+  kind: imaging_features
+  modality: imaging
+  group: imaging
+  schedule: 30 1 * * *
+  params:
+    site: site-a
+    samples:
+    - IMG-0001
+    - IMG-0002
+    - IMG-0003
+    - IMG-0004
+    - IMG-0005
+    - IMG-0006
+    - IMG-0007
+    - IMG-0008
+  checks:
+    min_rows: 1
+    not_null:
+    - sample_id
+    - snr_db
+    range:
+      foreground_fraction:
+      - 0
+      - 1
+  description: Intensity and texture features for microscopy acquired at site-a.
+- id: genomics-variants-site-a
+  kind: genomics_variants
+  modality: genomics
+  group: genomics
+  schedule: 0 2 * * *
+  params:
+    site: site-a
+    samples:
+    - WGS-0001
+    - WGS-0002
+    - WGS-0003
+    - WGS-0004
+  checks:
+    min_rows: 1
+    not_null:
+    - sample_id
+    - gene
+    - impact
+    range:
+      allele_freq:
+      - 0
+      - 1
+  description: Annotated small variants from whole-genome sequencing at site-a.
+- id: genomics-scrna-qc-site-a
+  kind: scrna_qc
+  modality: genomics
+  group: genomics
+  schedule: 30 2 * * *
+  params:
+    site: site-a
+    samples:
+    - SC-0001
+    - SC-0002
+    - SC-0003
+    - SC-0004
+  checks:
+    min_rows: 1
+    not_null:
+    - sample_id
+    range:
+      pass_rate:
+      - 0
+      - 1
+  description: Single-cell RNA-seq library QC metrics from site-a.
+- id: imaging-segmentation-site-b
+  kind: imaging_segmentation
+  modality: imaging
+  group: imaging
+  schedule: 0 1 * * *
+  params:
+    site: site-b
+    samples:
+    - IMG-0101
+    - IMG-0102
+    - IMG-0103
+    - IMG-0104
+    - IMG-0105
+    - IMG-0106
+    - IMG-0107
+    - IMG-0108
+  checks:
+    min_rows: 1
+    not_null:
+    - sample_id
+    - cell_count
+    range:
+      cell_count:
+      - 0
+      - 500
+  description: Nucleus segmentation summaries for microscopy acquired at site-b.
+- id: imaging-features-site-b
+  kind: imaging_features
+  modality: imaging
+  group: imaging
+  schedule: 30 1 * * *
+  params:
+    site: site-b
+    samples:
+    - IMG-0101
+    - IMG-0102
+    - IMG-0103
+    - IMG-0104
+    - IMG-0105
+    - IMG-0106
+    - IMG-0107
+    - IMG-0108
+  checks:
+    min_rows: 1
+    not_null:
+    - sample_id
+    - snr_db
+    range:
+      foreground_fraction:
+      - 0
+      - 1
+  description: Intensity and texture features for microscopy acquired at site-b.
+- id: genomics-variants-site-b
+  kind: genomics_variants
+  modality: genomics
+  group: genomics
+  schedule: 0 2 * * *
+  params:
+    site: site-b
+    samples:
+    - WGS-0101
+    - WGS-0102
+    - WGS-0103
+    - WGS-0104
+  checks:
+    min_rows: 1
+    not_null:
+    - sample_id
+    - gene
+    - impact
+    range:
+      allele_freq:
+      - 0
+      - 1
+  description: Annotated small variants from whole-genome sequencing at site-b.
+- id: genomics-scrna-qc-site-b
+  kind: scrna_qc
+  modality: genomics
+  group: genomics
+  schedule: 30 2 * * *
+  params:
+    site: site-b
+    samples:
+    - SC-0101
+    - SC-0102
+    - SC-0103
+    - SC-0104
+  checks:
+    min_rows: 1
+    not_null:
+    - sample_id
+    range:
+      pass_rate:
+      - 0
+      - 1
+  description: Single-cell RNA-seq library QC metrics from site-b.
+- id: imaging-segmentation-site-c
+  kind: imaging_segmentation
+  modality: imaging
+  group: imaging
+  schedule: 0 1 * * *
+  params:
+    site: site-c
+    samples:
+    - IMG-0201
+    - IMG-0202
+    - IMG-0203
+    - IMG-0204
+    - IMG-0205
+    - IMG-0206
+    - IMG-0207
+    - IMG-0208
+  checks:
+    min_rows: 1
+    not_null:
+    - sample_id
+    - cell_count
+    range:
+      cell_count:
+      - 0
+      - 500
+  description: Nucleus segmentation summaries for microscopy acquired at site-c.
+- id: imaging-features-site-c
+  kind: imaging_features
+  modality: imaging
+  group: imaging
+  schedule: 30 1 * * *
+  params:
+    site: site-c
+    samples:
+    - IMG-0201
+    - IMG-0202
+    - IMG-0203
+    - IMG-0204
+    - IMG-0205
+    - IMG-0206
+    - IMG-0207
+    - IMG-0208
+  checks:
+    min_rows: 1
+    not_null:
+    - sample_id
+    - snr_db
+    range:
+      foreground_fraction:
+      - 0
+      - 1
+  description: Intensity and texture features for microscopy acquired at site-c.
+- id: genomics-variants-site-c
+  kind: genomics_variants
+  modality: genomics
+  group: genomics
+  schedule: 0 2 * * *
+  params:
+    site: site-c
+    samples:
+    - WGS-0201
+    - WGS-0202
+    - WGS-0203
+    - WGS-0204
+  checks:
+    min_rows: 1
+    not_null:
+    - sample_id
+    - gene
+    - impact
+    range:
+      allele_freq:
+      - 0
+      - 1
+  description: Annotated small variants from whole-genome sequencing at site-c.
+- id: genomics-scrna-qc-site-c
+  kind: scrna_qc
+  modality: genomics
+  group: genomics
+  schedule: 30 2 * * *
+  params:
+    site: site-c
+    samples:
+    - SC-0201
+    - SC-0202
+    - SC-0203
+    - SC-0204
+  checks:
+    min_rows: 1
+    not_null:
+    - sample_id
+    range:
+      pass_rate:
+      - 0
+      - 1
+  description: Single-cell RNA-seq library QC metrics from site-c.
+- id: imaging-segmentation-site-d
+  kind: imaging_segmentation
+  modality: imaging
+  group: imaging
+  schedule: 0 1 * * *
+  params:
+    site: site-d
+    samples:
+    - IMG-0301
+    - IMG-0302
+    - IMG-0303
+    - IMG-0304
+    - IMG-0305
+    - IMG-0306
+    - IMG-0307
+    - IMG-0308
+  checks:
+    min_rows: 1
+    not_null:
+    - sample_id
+    - cell_count
+    range:
+      cell_count:
+      - 0
+      - 500
+  description: Nucleus segmentation summaries for microscopy acquired at site-d.
+- id: imaging-features-site-d
+  kind: imaging_features
+  modality: imaging
+  group: imaging
+  schedule: 30 1 * * *
+  params:
+    site: site-d
+    samples:
+    - IMG-0301
+    - IMG-0302
+    - IMG-0303
+    - IMG-0304
+    - IMG-0305
+    - IMG-0306
+    - IMG-0307
+    - IMG-0308
+  checks:
+    min_rows: 1
+    not_null:
+    - sample_id
+    - snr_db
+    range:
+      foreground_fraction:
+      - 0
+      - 1
+  description: Intensity and texture features for microscopy acquired at site-d.
+- id: genomics-variants-site-d
+  kind: genomics_variants
+  modality: genomics
+  group: genomics
+  schedule: 0 2 * * *
+  params:
+    site: site-d
+    samples:
+    - WGS-0301
+    - WGS-0302
+    - WGS-0303
+    - WGS-0304
+  checks:
+    min_rows: 1
+    not_null:
+    - sample_id
+    - gene
+    - impact
+    range:
+      allele_freq:
+      - 0
+      - 1
+  description: Annotated small variants from whole-genome sequencing at site-d.
+- id: genomics-scrna-qc-site-d
+  kind: scrna_qc
+  modality: genomics
+  group: genomics
+  schedule: 30 2 * * *
+  params:
+    site: site-d
+    samples:
+    - SC-0301
+    - SC-0302
+    - SC-0303
+    - SC-0304
+  checks:
+    min_rows: 1
+    not_null:
+    - sample_id
+    range:
+      pass_rate:
+      - 0
+      - 1
+  description: Single-cell RNA-seq library QC metrics from site-d.
+- id: clinical-vitals-heart-rate-site-a
+  kind: clinical_vitals
+  modality: clinical
+  group: clinical
+  schedule: 0 * * * *
+  params:
+    site: site-a
+    signal: heart_rate
+    patients: 20
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - hour
+    - value
+    unique:
+    - patient_id
+    - hour
+  description: Hourly heart rate time series from ICU monitors at site-a.
+- id: clinical-vitals-resp-rate-site-a
+  kind: clinical_vitals
+  modality: clinical
+  group: clinical
+  schedule: 0 * * * *
+  params:
+    site: site-a
+    signal: resp_rate
+    patients: 20
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - hour
+    - value
+    unique:
+    - patient_id
+    - hour
+  description: Hourly resp rate time series from ICU monitors at site-a.
+- id: clinical-vitals-spo2-site-a
+  kind: clinical_vitals
+  modality: clinical
+  group: clinical
+  schedule: 0 * * * *
+  params:
+    site: site-a
+    signal: spo2
+    patients: 20
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - hour
+    - value
+    unique:
+    - patient_id
+    - hour
+  description: Hourly spo2 time series from ICU monitors at site-a.
+- id: clinical-vitals-temp-c-site-a
+  kind: clinical_vitals
+  modality: clinical
+  group: clinical
+  schedule: 0 * * * *
+  params:
+    site: site-a
+    signal: temp_c
+    patients: 20
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - hour
+    - value
+    unique:
+    - patient_id
+    - hour
+  description: Hourly temp c time series from ICU monitors at site-a.
+- id: clinical-vitals-map-site-a
+  kind: clinical_vitals
+  modality: clinical
+  group: clinical
+  schedule: 0 * * * *
+  params:
+    site: site-a
+    signal: map
+    patients: 20
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - hour
+    - value
+    unique:
+    - patient_id
+    - hour
+  description: Hourly map time series from ICU monitors at site-a.
+- id: clinical-labs-harmonised-site-a
+  kind: lab_harmonisation
+  modality: clinical
+  group: clinical
+  schedule: 15 * * * *
+  params:
+    site: site-a
+    records: 200
+  checks:
+    min_rows: 1
+    not_null:
+    - loinc
+    - value
+    - unit
+  description: Lab results from site-a mapped to LOINC with canonical units.
+- id: clinical-vitals-heart-rate-site-b
+  kind: clinical_vitals
+  modality: clinical
+  group: clinical
+  schedule: 0 * * * *
+  params:
+    site: site-b
+    signal: heart_rate
+    patients: 20
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - hour
+    - value
+    unique:
+    - patient_id
+    - hour
+  description: Hourly heart rate time series from ICU monitors at site-b.
+- id: clinical-vitals-resp-rate-site-b
+  kind: clinical_vitals
+  modality: clinical
+  group: clinical
+  schedule: 0 * * * *
+  params:
+    site: site-b
+    signal: resp_rate
+    patients: 20
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - hour
+    - value
+    unique:
+    - patient_id
+    - hour
+  description: Hourly resp rate time series from ICU monitors at site-b.
+- id: clinical-vitals-spo2-site-b
+  kind: clinical_vitals
+  modality: clinical
+  group: clinical
+  schedule: 0 * * * *
+  params:
+    site: site-b
+    signal: spo2
+    patients: 20
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - hour
+    - value
+    unique:
+    - patient_id
+    - hour
+  description: Hourly spo2 time series from ICU monitors at site-b.
+- id: clinical-vitals-temp-c-site-b
+  kind: clinical_vitals
+  modality: clinical
+  group: clinical
+  schedule: 0 * * * *
+  params:
+    site: site-b
+    signal: temp_c
+    patients: 20
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - hour
+    - value
+    unique:
+    - patient_id
+    - hour
+  description: Hourly temp c time series from ICU monitors at site-b.
+- id: clinical-vitals-map-site-b
+  kind: clinical_vitals
+  modality: clinical
+  group: clinical
+  schedule: 0 * * * *
+  params:
+    site: site-b
+    signal: map
+    patients: 20
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - hour
+    - value
+    unique:
+    - patient_id
+    - hour
+  description: Hourly map time series from ICU monitors at site-b.
+- id: clinical-labs-harmonised-site-b
+  kind: lab_harmonisation
+  modality: clinical
+  group: clinical
+  schedule: 15 * * * *
+  params:
+    site: site-b
+    records: 200
+  checks:
+    min_rows: 1
+    not_null:
+    - loinc
+    - value
+    - unit
+  description: Lab results from site-b mapped to LOINC with canonical units.
+- id: clinical-vitals-heart-rate-site-c
+  kind: clinical_vitals
+  modality: clinical
+  group: clinical
+  schedule: 0 * * * *
+  params:
+    site: site-c
+    signal: heart_rate
+    patients: 20
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - hour
+    - value
+    unique:
+    - patient_id
+    - hour
+  description: Hourly heart rate time series from ICU monitors at site-c.
+- id: clinical-vitals-resp-rate-site-c
+  kind: clinical_vitals
+  modality: clinical
+  group: clinical
+  schedule: 0 * * * *
+  params:
+    site: site-c
+    signal: resp_rate
+    patients: 20
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - hour
+    - value
+    unique:
+    - patient_id
+    - hour
+  description: Hourly resp rate time series from ICU monitors at site-c.
+- id: clinical-vitals-spo2-site-c
+  kind: clinical_vitals
+  modality: clinical
+  group: clinical
+  schedule: 0 * * * *
+  params:
+    site: site-c
+    signal: spo2
+    patients: 20
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - hour
+    - value
+    unique:
+    - patient_id
+    - hour
+  description: Hourly spo2 time series from ICU monitors at site-c.
+- id: clinical-vitals-temp-c-site-c
+  kind: clinical_vitals
+  modality: clinical
+  group: clinical
+  schedule: 0 * * * *
+  params:
+    site: site-c
+    signal: temp_c
+    patients: 20
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - hour
+    - value
+    unique:
+    - patient_id
+    - hour
+  description: Hourly temp c time series from ICU monitors at site-c.
+- id: clinical-vitals-map-site-c
+  kind: clinical_vitals
+  modality: clinical
+  group: clinical
+  schedule: 0 * * * *
+  params:
+    site: site-c
+    signal: map
+    patients: 20
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - hour
+    - value
+    unique:
+    - patient_id
+    - hour
+  description: Hourly map time series from ICU monitors at site-c.
+- id: clinical-labs-harmonised-site-c
+  kind: lab_harmonisation
+  modality: clinical
+  group: clinical
+  schedule: 15 * * * *
+  params:
+    site: site-c
+    records: 200
+  checks:
+    min_rows: 1
+    not_null:
+    - loinc
+    - value
+    - unit
+  description: Lab results from site-c mapped to LOINC with canonical units.
+- id: clinical-registry-all
+  kind: clinical_registry
+  modality: clinical
+  group: clinical
+  schedule: 0 3 * * 0
+  params:
+    diagnosis: null
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - followup_days
+    unique:
+    - patient_id
+    range:
+      age:
+      - 0
+      - 120
+  description: Outcome registry snapshot (all) for survival analyses.
+- id: clinical-registry-sepsis
+  kind: clinical_registry
+  modality: clinical
+  group: clinical
+  schedule: 0 3 * * 0
+  params:
+    diagnosis: sepsis
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - followup_days
+    unique:
+    - patient_id
+    range:
+      age:
+      - 0
+      - 120
+  description: Outcome registry snapshot (sepsis) for survival analyses.
+- id: clinical-registry-pneumonia
+  kind: clinical_registry
+  modality: clinical
+  group: clinical
+  schedule: 0 3 * * 0
+  params:
+    diagnosis: pneumonia
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - followup_days
+    unique:
+    - patient_id
+    range:
+      age:
+      - 0
+      - 120
+  description: Outcome registry snapshot (pneumonia) for survival analyses.
+- id: clinical-registry-heart-failure
+  kind: clinical_registry
+  modality: clinical
+  group: clinical
+  schedule: 0 3 * * 0
+  params:
+    diagnosis: heart_failure
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - followup_days
+    unique:
+    - patient_id
+    range:
+      age:
+      - 0
+      - 120
+  description: Outcome registry snapshot (heart failure) for survival analyses.
+- id: clinical-registry-copd
+  kind: clinical_registry
+  modality: clinical
+  group: clinical
+  schedule: 0 3 * * 0
+  params:
+    diagnosis: copd
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - followup_days
+    unique:
+    - patient_id
+    range:
+      age:
+      - 0
+      - 120
+  description: Outcome registry snapshot (copd) for survival analyses.
+- id: clinical-registry-stroke
+  kind: clinical_registry
+  modality: clinical
+  group: clinical
+  schedule: 0 3 * * 0
+  params:
+    diagnosis: stroke
+  checks:
+    min_rows: 1
+    not_null:
+    - patient_id
+    - followup_days
+    unique:
+    - patient_id
+    range:
+      age:
+      - 0
+      - 120
+  description: Outcome registry snapshot (stroke) for survival analyses.

@@ -1,0 +1,85 @@
+{{- if .Values.monitoring.serviceMonitor.enabled }}
+{{- $sm := .Values.monitoring.serviceMonitor }}
+{{- if .Values.api.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "sciagent.componentName" (list $ "api") }}
+  labels:
+    {{- include "sciagent.componentLabels" (list $ "api") | nindent 4 }}
+    {{- with $sm.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "sciagent.selectorLabels" (list $ "api") | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ $sm.interval }}
+      scrapeTimeout: {{ $sm.scrapeTimeout }}
+      # Keep the app-emitted `service` label; the operator would otherwise
+      # overwrite it with the Kubernetes Service name.
+      honorLabels: true
+      relabelings:
+        - targetLabel: service
+          replacement: api
+{{- end }}
+{{- range $server := .Values.mcpServers }}
+{{- $component := printf "mcp-%s" $server.name }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "sciagent.componentName" (list $ $component) }}
+  labels:
+    {{- include "sciagent.componentLabels" (list $ $component) | nindent 4 }}
+    {{- with $sm.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "sciagent.selectorLabels" (list $ $component) | nindent 6 }}
+  endpoints:
+    - port: mcp
+      path: {{ $.Values.mcp.metricsPath }}
+      interval: {{ $sm.interval }}
+      scrapeTimeout: {{ $sm.scrapeTimeout }}
+      # Keep the app-emitted `service` label; the operator would otherwise
+      # overwrite it with the Kubernetes Service name.
+      honorLabels: true
+      relabelings:
+        - targetLabel: service
+          replacement: {{ $component }}
+{{- end }}
+{{- if .Values.vllm.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "sciagent.componentName" (list $ "vllm") }}
+  labels:
+    {{- include "sciagent.componentLabels" (list $ "vllm") | nindent 4 }}
+    {{- with $sm.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "sciagent.selectorLabels" (list $ "vllm") | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ $sm.interval }}
+      scrapeTimeout: {{ $sm.scrapeTimeout }}
+      # Keep the app-emitted `service` label; the operator would otherwise
+      # overwrite it with the Kubernetes Service name.
+      honorLabels: true
+      relabelings:
+        - targetLabel: service
+          replacement: vllm
+{{- end }}
+{{- end }}

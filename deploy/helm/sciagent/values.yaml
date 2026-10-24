@@ -1,0 +1,319 @@
+# Default values for the sciagent chart.
+# Environment overlays: values-dev.yaml, values-prod.yaml.
+
+nameOverride: ""
+
+# Exposed to every component as SCIAGENT_ENV.
+environment: dev
+
+global:
+  # Prefix for sciagent/* images, e.g. <account>.dkr.ecr.eu-central-1.amazonaws.com
+  imageRegistry: ""
+  imagePullSecrets: []
+
+# -- Shared, non-secret configuration (rendered into one ConfigMap) ----------
+config:
+  logLevel: INFO
+  # Curated data-lake zone (terraform output data_lake_uri).
+  dataLakeUri: s3://sciagent-dev-curated-111111111111
+  llmModel: sciagent-llm
+  # Override when vllm.enabled=false and an external OpenAI-compatible endpoint is used.
+  llmBaseUrlOverride: ""
+  # Additional plain env vars for every component.
+  extraEnv: {}
+
+# -- Secret reference --------------------------------------------------------
+# The chart never creates credentials. Provide an existing Secret (e.g. synced
+# by External Secrets Operator from AWS Secrets Manager) with the keys:
+#   SCIAGENT_DATABASE_URL, SCIAGENT_API_KEYS
+secrets:
+  existingSecret: sciagent-secrets
+
+# -- Pod security defaults (components may override) ------------------------
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  fsGroupChangePolicy: OnRootMismatch
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  privileged: false
+  capabilities:
+    drop:
+      - ALL
+
+# -- API gateway / agent orchestrator ----------------------------------------
+api:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: sciagent/api
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  command:
+    - uvicorn
+    - sciagent.api.main:app
+    - --host
+    - 0.0.0.0
+    - --port
+    - "8000"
+  extraArgs: []
+  port: 8000
+  service:
+    type: ClusterIP
+    port: 8000
+  serviceAccount:
+    create: true
+    # Must match the IRSA trust policy (infra/terraform, workload "api").
+    name: sciagent-api
+    automountToken: false
+    annotations: {}
+      # eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/sciagent-<env>-api
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 15
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  pdb:
+    enabled: true
+    minAvailable: 1
+  podAnnotations: {}
+  podSecurityContext: {}
+  containerSecurityContext: {}
+  nodeSelector:
+    workload: cpu-workers
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+  terminationGracePeriodSeconds: 30
+  ingress:
+    enabled: false
+    className: alb
+    annotations:
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+      alb.ingress.kubernetes.io/ssl-redirect: "443"
+      alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      alb.ingress.kubernetes.io/healthcheck-path: /readyz
+      alb.ingress.kubernetes.io/healthcheck-port: traffic-port
+      alb.ingress.kubernetes.io/success-codes: "200"
+      alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=300,routing.http.drop_invalid_header_fields.enabled=true
+      # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:...
+      # alb.ingress.kubernetes.io/wafv2-acl-arn: arn:aws:wafv2:...
+    hosts:
+      - host: api.sciagent.example.org
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+# -- MCP tool servers --------------------------------------------------------
+# Shared settings for every entry in mcpServers.
+mcp:
+  image:
+    repository: sciagent/mcp
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  # Streamable HTTP endpoint path served by each tool server.
+  path: /mcp
+  metricsPath: /metrics
+  serviceAccount:
+    create: true
+    # One service account / IRSA role for all tool servers (workload "mcp").
+    name: sciagent-mcp
+    automountToken: false
+    annotations: {}
+      # eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/sciagent-<env>-mcp
+  # MCP servers do not need the API keys / DB URL by default.
+  envFromSecret: false
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 75
+  pdb:
+    enabled: true
+    minAvailable: 1
+  podAnnotations: {}
+  podSecurityContext: {}
+  containerSecurityContext: {}
+  nodeSelector:
+    workload: cpu-workers
+  tolerations: []
+  affinity: {}
+  # Spread each tool server across zones / nodes (selectors generated per server).
+  topologySpread:
+    enabled: false
+    maxSkew: 1
+    whenUnsatisfiable: ScheduleAnyway
+
+# One Deployment + Service (+HPA/PDB/ServiceMonitor) per entry. Per-server keys
+# replicaCount, resources and autoscaling override the shared mcp.* values.
+mcpServers:
+  - name: imaging
+    port: 8101
+  - name: genomics
+    port: 8102
+  - name: clinical
+    port: 8103
+
+# -- vLLM OpenAI-compatible inference server --------------------------------
+vllm:
+  enabled: true
+  replicaCount: 1
+  image:
+    # Pinned to Docker Hub regardless of global.imageRegistry (point at a mirror if needed).
+    registry: docker.io
+    repository: vllm/vllm-openai
+    tag: v0.6.3
+    digest: ""
+    pullPolicy: IfNotPresent
+  # Hugging Face model id, injected as $(MODEL). Fits an A10G (24 GiB) at 8k context.
+  model: meta-llama/Llama-3.1-8B-Instruct
+  # Rendered as: --model $(MODEL) --served-model-name <config.llmModel>
+  #   --max-model-len <maxModelLen> --gpu-memory-utilization <gpuMemoryUtilization> --port <port>
+  maxModelLen: 8192
+  gpuMemoryUtilization: "0.90"
+  # Tool calling is required by the agent's planner (OpenAI-style tool_calls).
+  extraArgs:
+    - --enable-auto-tool-choice
+    - --tool-call-parser=llama3_json
+  port: 8001
+  service:
+    type: ClusterIP
+    port: 8001
+  # Optional Secret with a Hugging Face token for gated models.
+  huggingFaceToken:
+    secretName: ""
+    secretKey: HF_TOKEN
+  serviceAccount:
+    create: true
+    name: sciagent-vllm
+    automountToken: false
+    annotations: {}
+  resources:
+    requests:
+      cpu: "4"
+      memory: 24Gi
+      nvidia.com/gpu: 1
+    limits:
+      memory: 28Gi
+      nvidia.com/gpu: 1
+  # Model weights cache. emptyDir by default (re-downloaded per pod); set
+  # persistence.enabled to use a PVC (RWX such as EFS when replicas > 1).
+  modelCache:
+    mountPath: /models
+    sizeLimit: 100Gi
+    persistence:
+      enabled: false
+      existingClaim: ""
+      storageClassName: gp3
+      accessModes:
+        - ReadWriteOnce
+      size: 100Gi
+  # Shared memory for PyTorch / NCCL.
+  shmSizeLimit: 8Gi
+  startupProbe:
+    httpGet:
+      path: /health
+      port: http
+    periodSeconds: 10
+    failureThreshold: 90
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: http
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 3
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 4
+    # Per-pod custom metric served by prometheus-adapter (custom.metrics.k8s.io).
+    metricName: "vllm:num_requests_waiting"
+    targetAverageValue: "5"
+  pdb:
+    enabled: true
+    maxUnavailable: 1
+  podAnnotations: {}
+  # vLLM writes caches under $HOME; run as an unprivileged user with HOME=/tmp.
+  podSecurityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+  containerSecurityContext: {}
+  nodeSelector:
+    workload: gpu-inference
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+  affinity: {}
+  priorityClassName: ""
+  terminationGracePeriodSeconds: 60
+
+# -- Network policies --------------------------------------------------------
+networkPolicy:
+  enabled: true
+  # Peers allowed to reach the API (empty = any source, e.g. ALB in ip mode).
+  apiIngressFrom: []
+  # Namespace allowed to scrape metrics ports (Prometheus). Empty disables.
+  monitoringNamespace: monitoring
+
+# -- Monitoring --------------------------------------------------------------
+monitoring:
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    # Labels the Prometheus operator selects ServiceMonitors by.
+    labels:
+      release: kube-prometheus-stack

@@ -1,0 +1,49 @@
+SciAgent {{ .Chart.AppVersion }} deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}" ({{ .Values.environment }}).
+
+Components
+{{- if .Values.api.enabled }}
+  api      http://{{ include "sciagent.componentName" (list $ "api") }}:{{ .Values.api.service.port }}  (/healthz, /readyz, /metrics)
+{{- end }}
+{{- range .Values.mcpServers }}
+  mcp      {{ include "sciagent.mcpUrl" (list $ .) }}
+{{- end }}
+{{- if .Values.vllm.enabled }}
+  vllm     {{ include "sciagent.vllmUrl" . }}  (model {{ .Values.vllm.model }} served as "{{ .Values.config.llmModel }}")
+{{- end }}
+
+Configuration is read from ConfigMap {{ include "sciagent.componentName" (list $ "config") }}
+and Secret {{ .Values.secrets.existingSecret }} (must contain SCIAGENT_DATABASE_URL and SCIAGENT_API_KEYS).
+Check it exists:
+  kubectl -n {{ .Release.Namespace }} get secret {{ .Values.secrets.existingSecret }}
+
+{{- if and .Values.api.enabled .Values.api.ingress.enabled }}
+
+Ingress (ALB) hosts:
+{{- range .Values.api.ingress.hosts }}
+  https://{{ .host }}
+{{- end }}
+  kubectl -n {{ .Release.Namespace }} get ingress {{ include "sciagent.componentName" (list $ "api") }}
+{{- else if .Values.api.enabled }}
+
+Reach the API locally:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "sciagent.componentName" (list $ "api") }} 8000:{{ .Values.api.service.port }}
+  curl http://localhost:8000/healthz
+{{- end }}
+
+{{- if .Values.vllm.enabled }}
+
+vLLM runs on the gpu-inference node group (min size 0). The first pod may stay
+Pending for several minutes while cluster-autoscaler adds a GPU node and the
+model is downloaded:
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/component=vllm -w
+{{- if .Values.vllm.autoscaling.enabled }}
+The vLLM HPA needs prometheus-adapter exposing "{{ .Values.vllm.autoscaling.metricName }}":
+  kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/{{ .Release.Namespace }}/pods/*/{{ .Values.vllm.autoscaling.metricName }}"
+{{- end }}
+{{- end }}
+{{- if not (or .Values.api.serviceAccount.annotations .Values.mcp.serviceAccount.annotations) }}
+
+WARNING: no IRSA role annotations set on the api / mcp service accounts; data-lake
+access will fail. Set api.serviceAccount.annotations and mcp.serviceAccount.annotations
+from `terraform output irsa_role_arns`.
+{{- end }}

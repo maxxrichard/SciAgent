@@ -1,0 +1,30 @@
+# Tool access policy. Every tool exposed by an MCP server must appear here,
+# otherwise calls are denied by default.
+tools:
+  segment_cells:
+    group: imaging
+    max_calls_per_run: 4
+  extract_image_features:
+    group: imaging
+    max_calls_per_run: 4
+  annotate_variants:
+    group: genomics
+    max_calls_per_run: 3
+    max_rows: 5000
+  expression_qc:
+    group: genomics
+    max_calls_per_run: 3
+  detect_vital_anomalies:
+    group: clinical
+    max_calls_per_run: 4
+  survival_analysis:
+    group: clinical
+    roles: [analyst, researcher, admin]
+    max_calls_per_run: 2
+  build_cohort:
+    group: clinical
+    max_calls_per_run: 3
+    max_rows: 10000
+  harmonise_records:
+    group: clinical
+    max_calls_per_run: 4

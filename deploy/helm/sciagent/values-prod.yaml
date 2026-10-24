@@ -1,0 +1,153 @@
+# prod overlay: HA replicas spread across zones, autoscaling, internet-facing
+# ALB with TLS, ServiceMonitors for the SLO rules in deploy/monitoring.
+# Selectors below assume the release is named "sciagent".
+#   helm upgrade --install sciagent deploy/helm/sciagent -n sciagent \
+#     -f deploy/helm/sciagent/values.yaml -f deploy/helm/sciagent/values-prod.yaml
+
+environment: prod
+
+config:
+  logLevel: INFO
+  # terraform -chdir=infra/terraform/envs/prod output -raw data_lake_uri
+  dataLakeUri: s3://sciagent-prod-curated-333333333333
+
+secrets:
+  existingSecret: sciagent-secrets
+
+api:
+  replicaCount: 3
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 65
+  pdb:
+    enabled: true
+    minAvailable: 2
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      memory: 4Gi
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::333333333333:role/sciagent-prod-api
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: sciagent
+          app.kubernetes.io/instance: sciagent
+          app.kubernetes.io/component: api
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: sciagent
+          app.kubernetes.io/instance: sciagent
+          app.kubernetes.io/component: api
+  ingress:
+    enabled: true
+    className: alb
+    annotations:
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+      alb.ingress.kubernetes.io/ssl-redirect: "443"
+      alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      alb.ingress.kubernetes.io/healthcheck-path: /readyz
+      alb.ingress.kubernetes.io/healthcheck-port: traffic-port
+      alb.ingress.kubernetes.io/success-codes: "200"
+      alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=300,routing.http.drop_invalid_header_fields.enabled=true,deletion_protection.enabled=true
+      # Set from ACM / WAF before the first prod install.
+      alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:eu-central-1:333333333333:certificate/REPLACE-ME
+      # alb.ingress.kubernetes.io/wafv2-acl-arn: arn:aws:wafv2:eu-central-1:333333333333:regional/webacl/sciagent-prod/REPLACE-ME
+    hosts:
+      - host: api.sciagent.example.org
+        paths:
+          - path: /
+            pathType: Prefix
+
+mcp:
+  replicaCount: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+  pdb:
+    enabled: true
+    minAvailable: 1
+  topologySpread:
+    enabled: true
+    maxSkew: 1
+    whenUnsatisfiable: ScheduleAnyway
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::333333333333:role/sciagent-prod-mcp
+
+# Imaging tools stage large tiles; give them more memory and scratch headroom.
+mcpServers:
+  - name: imaging
+    port: 8101
+    resources:
+      requests:
+        cpu: "1"
+        memory: 2Gi
+      limits:
+        memory: 6Gi
+  - name: genomics
+    port: 8102
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        memory: 4Gi
+  - name: clinical
+    port: 8103
+
+vllm:
+  model: meta-llama/Llama-3.1-8B-Instruct
+  huggingFaceToken:
+    secretName: sciagent-hf-token
+    secretKey: HF_TOKEN
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    # Matches gpu_nodes.max in infra/terraform/envs/prod.
+    maxReplicas: 6
+    metricName: "vllm:num_requests_waiting"
+    targetAverageValue: "5"
+  pdb:
+    enabled: true
+    maxUnavailable: 1
+  # Model cache stays on node-local emptyDir (default). For shared weights,
+  # provision an EFS file system + efs-sc StorageClass and set
+  # modelCache.persistence (accessModes: [ReadWriteMany]).
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            topologyKey: topology.kubernetes.io/zone
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: sciagent
+                app.kubernetes.io/instance: sciagent
+                app.kubernetes.io/component: vllm
+
+networkPolicy:
+  enabled: true
+  monitoringNamespace: monitoring
+
+monitoring:
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+    scrapeTimeout: 10s
+    labels:
+      release: kube-prometheus-stack

@@ -1,0 +1,106 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sciagent"
+version = "0.9.0"
+description = "AI enablement platform for scientific data and agentic workflows over multimodal biological data."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Maxx Richard Rahman" }]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Framework :: FastAPI",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.3",
+  "sqlalchemy>=2.0",
+  "httpx>=0.27",
+  "prometheus-client>=0.20",
+  "numpy>=1.26",
+  "pyarrow>=16",
+  "pyyaml>=6",
+  "langgraph>=0.2",
+  "mcp>=2.0",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.2", "pgvector>=0.3"]
+s3 = ["s3fs>=2024.6", "deltalake>=0.18"]
+airflow = ["apache-airflow>=2.9"]
+docs = ["mkdocs-material>=9.5", "mkdocstrings[python]>=0.25"]
+dev = [
+  "pytest>=8",
+  "pytest-cov>=5",
+  "pytest-asyncio>=0.23",
+  "ruff>=0.6",
+  "mypy>=1.10",
+  "types-PyYAML",
+  "pre-commit>=3.7",
+]
+
+[project.scripts]
+sciagent = "sciagent.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sciagent"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+asyncio_mode = "auto"
+markers = [
+  "integration: tests that exercise multiple services in-process",
+]
+
+[tool.coverage.run]
+source = ["sciagent"]
+branch = true
+omit = [
+  "src/sciagent/mcp_servers/__main__.py",
+  "src/sciagent/mcp_servers/imaging.py",
+  "src/sciagent/mcp_servers/genomics.py",
+  "src/sciagent/mcp_servers/clinical.py",
+]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+  "if __name__ == .__main__.:",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "S", "N"]
+ignore = ["S101", "S311", "RUF012", "B008", "N818"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "N802"]
+"dags/**" = ["S"]
+# Table name is validated with str.isidentifier() before interpolation.
+"src/sciagent/retrieval/store.py" = ["S608"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+files = ["src/sciagent"]
+plugins = ["pydantic.mypy"]

@@ -1,0 +1,82 @@
+# dev overlay: single replicas, no autoscaling, smaller GPU footprint.
+#   helm upgrade --install sciagent deploy/helm/sciagent -n sciagent \
+#     -f deploy/helm/sciagent/values.yaml -f deploy/helm/sciagent/values-dev.yaml
+
+environment: dev
+
+config:
+  logLevel: DEBUG
+  # terraform -chdir=infra/terraform/envs/dev output -raw data_lake_uri
+  dataLakeUri: s3://sciagent-dev-curated-111111111111
+
+secrets:
+  existingSecret: sciagent-secrets
+
+api:
+  replicaCount: 1
+  autoscaling:
+    enabled: false
+  pdb:
+    enabled: false
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::111111111111:role/sciagent-dev-api
+  ingress:
+    enabled: true
+    annotations:
+      alb.ingress.kubernetes.io/scheme: internal
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+      # No HTTPS listener in dev: drop the TLS annotations inherited from values.yaml.
+      alb.ingress.kubernetes.io/ssl-redirect: null
+      alb.ingress.kubernetes.io/ssl-policy: null
+      alb.ingress.kubernetes.io/healthcheck-path: /readyz
+      alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=300
+    hosts:
+      - host: api.dev.sciagent.internal
+        paths:
+          - path: /
+            pathType: Prefix
+
+mcp:
+  replicaCount: 1
+  autoscaling:
+    enabled: false
+  pdb:
+    enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::111111111111:role/sciagent-dev-mcp
+
+vllm:
+  replicaCount: 1
+  # Smaller model for fast cold starts on a scale-from-zero GPU node.
+  model: Qwen/Qwen2.5-3B-Instruct
+  autoscaling:
+    enabled: false
+  pdb:
+    enabled: false
+  resources:
+    requests:
+      cpu: "2"
+      memory: 16Gi
+      nvidia.com/gpu: 1
+    limits:
+      memory: 20Gi
+      nvidia.com/gpu: 1
+
+monitoring:
+  serviceMonitor:
+    enabled: false

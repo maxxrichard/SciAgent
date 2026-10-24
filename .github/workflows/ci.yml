@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv venv --python 3.12 && uv pip install -e ".[dev]"
+      - run: .venv/bin/ruff check src tests dags
+      - run: .venv/bin/ruff format --check src tests dags
+      - run: .venv/bin/mypy
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12"]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: sciagent
+          POSTGRES_PASSWORD: sciagent
+          POSTGRES_DB: sciagent
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U sciagent" --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv venv --python ${{ matrix.python }} && uv pip install -e ".[dev,postgres]"
+      - name: Unit and integration tests (90% coverage floor)
+        run: .venv/bin/pytest --cov --cov-report=xml --junitxml=junit.xml
+      - name: Smoke test against PostgreSQL
+        env:
+          SCIAGENT_DATABASE_URL: postgresql+psycopg://sciagent:sciagent@localhost:5432/sciagent
+          SCIAGENT_DATA_LAKE_URI: ${{ runner.temp }}/lake
+        run: |
+          .venv/bin/sciagent pipelines run clinical-registry-sepsis
+          .venv/bin/sciagent query "How many patients with sepsis are in the registry cohort?"
+          .venv/bin/sciagent audit-verify
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.python }}
+          path: |
+            coverage.xml
+            junit.xml
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: [lint]
+    strategy:
+      matrix:
+        image: [api, mcp]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/${{ matrix.image }}.Dockerfile
+          push: false
+          tags: sciagent/${{ matrix.image }}:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: helm lint deploy/helm/sciagent -f deploy/helm/sciagent/values-prod.yaml
+      - run: helm template ci deploy/helm/sciagent -f deploy/helm/sciagent/values-dev.yaml > /dev/null

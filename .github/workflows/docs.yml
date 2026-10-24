@@ -1,0 +1,22 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**", "mkdocs.yml", "src/**"]
+  pull_request:
+    paths: ["docs/**", "mkdocs.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv venv --python 3.12 && uv pip install -e ".[docs]"
+      - run: .venv/bin/mkdocs build --strict
+      - if: github.event_name == 'push'
+        run: .venv/bin/mkdocs gh-deploy --force

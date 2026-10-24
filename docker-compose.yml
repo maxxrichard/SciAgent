@@ -1,0 +1,93 @@
+# Local stack: API + three MCP tool servers + Postgres/pgvector + Prometheus + Grafana.
+# `docker compose --profile gpu up` additionally serves a model with vLLM.
+x-sciagent-env: &sciagent-env
+  SCIAGENT_ENV: local
+  SCIAGENT_DATABASE_URL: postgresql+psycopg://sciagent:sciagent@postgres:5432/sciagent
+  SCIAGENT_DATA_LAKE_URI: /data/lake
+  SCIAGENT_TOOL_TRANSPORT: mcp
+  SCIAGENT_MCP_IMAGING_URL: http://mcp-imaging:8101/mcp
+  SCIAGENT_MCP_GENOMICS_URL: http://mcp-genomics:8102/mcp
+  SCIAGENT_MCP_CLINICAL_URL: http://mcp-clinical:8103/mcp
+  SCIAGENT_LLM_BACKEND: ${SCIAGENT_LLM_BACKEND:-rule}
+  SCIAGENT_LLM_BASE_URL: http://vllm:8001/v1
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: sciagent
+      POSTGRES_PASSWORD: sciagent
+      POSTGRES_DB: sciagent
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sciagent"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: { context: ., dockerfile: docker/api.Dockerfile }
+    environment: *sciagent-env
+    ports: ["8000:8000"]
+    volumes: [lake:/data/lake]
+    depends_on:
+      postgres: { condition: service_healthy }
+      mcp-imaging: { condition: service_started }
+      mcp-genomics: { condition: service_started }
+      mcp-clinical: { condition: service_started }
+
+  mcp-imaging:
+    build: { context: ., dockerfile: docker/mcp.Dockerfile }
+    command: ["imaging", "--port", "8101"]
+    ports: ["8101:8101"]
+
+  mcp-genomics:
+    build: { context: ., dockerfile: docker/mcp.Dockerfile }
+    command: ["genomics", "--port", "8102"]
+    ports: ["8102:8102"]
+
+  mcp-clinical:
+    build: { context: ., dockerfile: docker/mcp.Dockerfile }
+    command: ["clinical", "--port", "8103"]
+    ports: ["8103:8103"]
+
+  vllm:
+    profiles: [gpu]
+    image: vllm/vllm-openai:v0.6.3
+    command:
+      - --model=${SCIAGENT_MODEL:-Qwen/Qwen2.5-7B-Instruct}
+      - --served-model-name=sciagent-llm
+      - --enable-auto-tool-choice
+      - --tool-call-parser=hermes
+      - --max-model-len=8192
+      - --port=8001
+    ports: ["8001:8001"]
+    volumes: [hf-cache:/root/.cache/huggingface]
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }]
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    volumes:
+      - ./deploy/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/monitoring/prometheus/rules:/etc/prometheus/rules:ro
+    ports: ["9090:9090"]
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["3000:3000"]
+    depends_on: [prometheus]
+
+volumes:
+  pgdata:
+  lake:
+  hf-cache:

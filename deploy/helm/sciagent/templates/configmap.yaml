@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sciagent.componentName" (list $ "config") }}
+  labels:
+    {{- include "sciagent.componentLabels" (list $ "config") | nindent 4 }}
+data:
+  SCIAGENT_ENV: {{ .Values.environment | quote }}
+  SCIAGENT_LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  SCIAGENT_DATA_LAKE_URI: {{ required "config.dataLakeUri is required" .Values.config.dataLakeUri | quote }}
+  SCIAGENT_LLM_BASE_URL: {{ .Values.config.llmBaseUrlOverride | default (include "sciagent.vllmUrl" .) | quote }}
+  SCIAGENT_LLM_MODEL: {{ .Values.config.llmModel | quote }}
+  {{- range .Values.mcpServers }}
+  SCIAGENT_MCP_{{ .name | upper }}_URL: {{ include "sciagent.mcpUrl" (list $ .) | quote }}
+  {{- end }}
+  {{- range $k, $v := .Values.config.extraEnv }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}

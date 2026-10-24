@@ -1,0 +1,53 @@
+site_name: SciAgent
+site_description: AI enablement platform for scientific data and agentic workflows
+repo_url: https://github.com/maxxrichard/SciAgent
+edit_uri: edit/main/docs/
+theme:
+  name: material
+  features: [navigation.sections, navigation.top, content.code.copy, search.suggest]
+  palette:
+    - scheme: default
+      toggle: { icon: material/brightness-7, name: Dark mode }
+    - scheme: slate
+      toggle: { icon: material/brightness-4, name: Light mode }
+markdown_extensions:
+  - admonition
+  - tables
+  - toc: { permalink: true }
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - { name: mermaid, class: mermaid, format: !!python/name:pymdownx.superfences.fence_code_format }
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+nav:
+  - Home: index.md
+  - Getting started: guides/getting-started.md
+  - Architecture:
+      - Overview: architecture/overview.md
+      - Agent layer: architecture/agent.md
+      - Data layer: architecture/data.md
+      - Governance: architecture/governance.md
+      - Evaluation: architecture/evaluation.md
+      - Deployment: architecture/deployment.md
+  - Guides:
+      - Adding a tool: guides/adding-a-tool.md
+      - Adding a pipeline: guides/adding-a-pipeline.md
+      - API usage: guides/api.md
+  - Decisions (ADRs):
+      - Index: adr/README.md
+      - 0001 Record decisions: adr/0001-record-architecture-decisions.md
+      - 0002 Kubernetes on EKS: adr/0002-kubernetes-on-eks.md
+      - 0003 LangGraph agent: adr/0003-langgraph-for-agent-orchestration.md
+      - 0004 MCP tool servers: adr/0004-mcp-for-tool-access.md
+      - 0005 Self-hosted vLLM: adr/0005-self-hosted-vllm.md
+      - 0006 Lake format: adr/0006-parquet-delta-lake-on-s3.md
+      - 0007 pgvector: adr/0007-pgvector-for-retrieval.md
+      - 0008 Eval-gated releases: adr/0008-evaluation-gated-releases.md
+  - Operations:
+      - Runbooks: runbooks/README.md
+      - Risk register: risk-register.md

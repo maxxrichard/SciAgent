@@ -1,0 +1,234 @@
+name: terraform
+
+# PRs: static checks only (no cloud credentials).
+# main: plan every environment with a read-only OIDC role, then apply the
+# saved plan behind the matching GitHub environment. The `prod` environment
+# must be configured with required reviewers (manual approval).
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-${{ github.ref }}
+  # Never cancel a run that may be mid-apply.
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: "1.9.8"
+  TFLINT_VERSION: "v0.53.0"
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  AWS_REGION: eu-central-1
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive -diff infra/terraform
+
+  validate:
+    name: validate (${{ matrix.stack }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        stack: [envs/dev, envs/staging, envs/prod, bootstrap]
+    defaults:
+      run:
+        working-directory: infra/terraform/${{ matrix.stack }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: tf-plugins-${{ runner.os }}-${{ hashFiles('infra/terraform/**/versions.tf') }}
+
+      - name: terraform init (no backend)
+        run: |
+          export TF_PLUGIN_CACHE_DIR="$HOME/.terraform.d/plugin-cache"
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+          terraform init -backend=false
+
+      - name: terraform validate
+        run: terraform validate -no-color
+
+  tflint:
+    name: tflint (${{ matrix.stack }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        stack: [envs/dev, envs/staging, envs/prod, bootstrap]
+    defaults:
+      run:
+        working-directory: infra/terraform/${{ matrix.stack }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.tflint.d/plugins
+          key: tflint-${{ runner.os }}-${{ hashFiles('infra/terraform/.tflint.hcl') }}
+
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: ${{ env.TFLINT_VERSION }}
+
+      - name: tflint --init
+        env:
+          # Avoids GitHub API rate limits when downloading the AWS ruleset.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: tflint --init --config "$GITHUB_WORKSPACE/infra/terraform/.tflint.hcl"
+
+      - name: tflint
+        run: tflint --config "$GITHUB_WORKSPACE/infra/terraform/.tflint.hcl" --format compact
+
+  plan:
+    name: plan (${{ matrix.environment }})
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [fmt, validate, tflint]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - environment: dev
+            role_secret: AWS_PLAN_ROLE_ARN_DEV
+          - environment: staging
+            role_secret: AWS_PLAN_ROLE_ARN_STAGING
+          - environment: prod
+            role_secret: AWS_PLAN_ROLE_ARN_PROD
+    defaults:
+      run:
+        working-directory: infra/terraform/envs/${{ matrix.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials (read-only plan role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets[matrix.role_secret] }}
+          role-session-name: gha-tf-plan-${{ matrix.environment }}-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: terraform init
+        run: terraform init
+
+      - name: terraform plan
+        id: plan
+        run: |
+          set +e
+          terraform plan -lock-timeout=5m -detailed-exitcode -no-color -out=tfplan > plan.txt
+          code=$?
+          set -e
+          cat plan.txt
+          # 0 = no changes, 2 = changes, 1 = error
+          if [ "$code" -eq 1 ]; then exit 1; fi
+          if [ "$code" -eq 2 ]; then echo "true" > has-changes; else echo "false" > has-changes; fi
+          {
+            echo "### terraform plan: ${{ matrix.environment }}"
+            echo '```'
+            grep -E '^(Plan:|No changes\.)' plan.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ matrix.environment }}
+          path: |
+            infra/terraform/envs/${{ matrix.environment }}/tfplan
+            infra/terraform/envs/${{ matrix.environment }}/plan.txt
+            infra/terraform/envs/${{ matrix.environment }}/has-changes
+          retention-days: 7
+          if-no-files-found: error
+
+  apply:
+    name: apply (${{ matrix.environment }})
+    needs: [plan]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: true
+      # One environment at a time.
+      max-parallel: 1
+      matrix:
+        environment: [dev, staging, prod]
+    # Binds the job to the GitHub environment: prod waits for manual approval
+    # and only this environment's AWS_APPLY_ROLE_ARN secret is exposed.
+    environment: ${{ matrix.environment }}
+    defaults:
+      run:
+        working-directory: infra/terraform/envs/${{ matrix.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ matrix.environment }}
+          path: infra/terraform/envs/${{ matrix.environment }}
+
+      - name: Check for changes
+        id: changes
+        run: echo "apply=$(cat has-changes)" >> "$GITHUB_OUTPUT"
+
+      - uses: hashicorp/setup-terraform@v3
+        if: steps.changes.outputs.apply == 'true'
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials (apply role)
+        if: steps.changes.outputs.apply == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
+          role-session-name: gha-tf-apply-${{ matrix.environment }}-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: terraform init
+        if: steps.changes.outputs.apply == 'true'
+        run: terraform init
+
+      # Applies exactly the reviewed plan; fails if state changed since planning.
+      - name: terraform apply
+        if: steps.changes.outputs.apply == 'true'
+        run: terraform apply -lock-timeout=5m -no-color -auto-approve tfplan
