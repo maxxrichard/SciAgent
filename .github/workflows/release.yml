@@ -57,7 +57,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
       - run: aws eks update-kubeconfig --name sciagent-${{ matrix.env }}
       - name: Helm upgrade
         run: |
