@@ -65,7 +65,7 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.terraform.d/plugin-cache
           key: tf-plugins-${{ runner.os }}-${{ hashFiles('infra/terraform/**/versions.tf') }}
@@ -92,7 +92,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.tflint.d/plugins
           key: tflint-${{ runner.os }}-${{ hashFiles('infra/terraform/.tflint.hcl') }}
